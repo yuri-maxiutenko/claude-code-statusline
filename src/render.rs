@@ -1,0 +1,289 @@
+//! Turns the session JSON into the two status lines.
+
+use serde_json::{Map, Value};
+
+/// Parses stdin; anything that isn't a JSON object renders as empty input.
+pub fn parse_input(raw: &[u8]) -> Value {
+    match serde_json::from_slice::<Value>(raw) {
+        Ok(value @ Value::Object(_)) => value,
+        _ => Value::Object(Map::new()),
+    }
+}
+
+/// A non-empty string at `pointer`, if there is one.
+fn text<'a>(input: &'a Value, pointer: &str) -> Option<&'a str> {
+    input
+        .pointer(pointer)
+        .and_then(Value::as_str)
+        .filter(|s| !s.is_empty())
+}
+
+/// A finite number at `pointer`; missing, null or non-numeric values are skipped.
+fn number(input: &Value, pointer: &str) -> Option<f64> {
+    input
+        .pointer(pointer)
+        .and_then(Value::as_f64)
+        .filter(|n| n.is_finite())
+}
+
+/// The session's working directory, or an empty string.
+pub fn cwd(input: &Value) -> &str {
+    text(input, "/workspace/current_dir")
+        .or_else(|| text(input, "/cwd"))
+        .unwrap_or("")
+}
+
+fn paint(code: u8, text: &str) -> String {
+    format!("\x1b[{code}m{text}\x1b[0m")
+}
+
+/// Replaces the home directory with `~`. Paths are case-insensitive only on
+/// Windows, and the next character must be a separator so /home/al doesn't
+/// match /home/alex.
+pub fn shorten_home(cwd: &str, home: &str, windows: bool) -> String {
+    let Some(prefix) = cwd.get(..home.len()).filter(|_| !home.is_empty()) else {
+        return cwd.to_string();
+    };
+    let same = if windows {
+        prefix.to_lowercase() == home.to_lowercase()
+    } else {
+        prefix == home
+    };
+    let rest = &cwd[home.len()..];
+    if same && (rest.is_empty() || rest.starts_with(['\\', '/'])) {
+        format!("~{rest}")
+    } else {
+        cwd.to_string()
+    }
+}
+
+pub fn render(input: &Value, home: &str, windows: bool, branch: &str) -> String {
+    let mut parts = Vec::new();
+
+    // Model, with the effort level in parentheses
+    if let Some(model) = text(input, "/model/display_name") {
+        let label = match text(input, "/effort/level") {
+            Some(level) => format!("{model} ({level})"),
+            None => model.to_string(),
+        };
+        parts.push(paint(33, &label));
+    }
+
+    // Output style (only shown when not the default)
+    if let Some(style) = text(input, "/output_style/name").filter(|s| *s != "default") {
+        parts.push(paint(37, style));
+    }
+
+    // Context usage, drawn as a bar with the consumed share filled in
+    if let Some(used) = number(input, "/context_window/used_percentage") {
+        const WIDTH: i64 = 10;
+        let pct = used.round() as i64;
+        let filled = pct
+            .saturating_mul(WIDTH)
+            .saturating_add(50)
+            .div_euclid(100)
+            .clamp(0, WIDTH);
+
+        // Green while there is room, amber above 40%, red above 90%
+        let color = if pct > 90 {
+            31
+        } else if pct > 40 {
+            33
+        } else {
+            32
+        };
+
+        let on = "\u{2588}".repeat(filled as usize);
+        let off = "\u{2591}".repeat((WIDTH - filled) as usize);
+        parts.push(format!(
+            "{}\x1b[90m{off}\x1b[0m {}",
+            paint(color, &on),
+            paint(color, &format!("{pct}%"))
+        ));
+    }
+
+    // Session cost, when Claude Code reports one
+    if let Some(cost) = number(input, "/cost/total_cost_usd") {
+        parts.push(paint(32, &format!("${cost:.2}")));
+    }
+
+    // Claude.ai subscription rate limits (5h / 7d), white until they pass 90%
+    for (name, pointer) in [
+        ("5h", "/rate_limits/five_hour/used_percentage"),
+        ("7d", "/rate_limits/seven_day/used_percentage"),
+    ] {
+        if let Some(used) = number(input, pointer) {
+            let n = used.round() as i64;
+            parts.push(paint(if n > 90 { 31 } else { 37 }, &format!("{name}:{n}%")));
+        }
+    }
+
+    // Second line: directory and git branch
+    let mut repo = vec![paint(34, &shorten_home(cwd(input), home, windows))];
+    if !branch.is_empty() {
+        repo.push(paint(32, &format!("({branch})")));
+    }
+
+    format!("{}\n{}", parts.join(" "), repo.join(" "))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const HOME: &str = r"C:\Users\alex";
+
+    fn input(json: &str) -> Value {
+        parse_input(json.as_bytes())
+    }
+
+    /// The output with ANSI color codes removed.
+    fn plain(s: &str) -> String {
+        let mut out = String::new();
+        let mut chars = s.chars();
+        while let Some(c) = chars.next() {
+            if c == '\x1b' {
+                chars.by_ref().find(|&c| c == 'm');
+            } else {
+                out.push(c);
+            }
+        }
+        out
+    }
+
+    fn first_line(json: &str) -> String {
+        let out = render(&input(json), HOME, true, "");
+        plain(out.split('\n').next().unwrap())
+    }
+
+    fn bar(pct: f64) -> String {
+        first_line(&format!(
+            r#"{{"context_window":{{"used_percentage":{pct}}}}}"#
+        ))
+    }
+
+    #[test]
+    fn full_input_matches_exact_output() {
+        let json = r#"{
+            "model": {"display_name": "Opus 5.5"},
+            "effort": {"level": "high"},
+            "workspace": {"current_dir": "C:\\Users\\alex\\src\\app"},
+            "context_window": {"used_percentage": 45.5},
+            "cost": {"total_cost_usd": 1.235},
+            "rate_limits": {"five_hour": {"used_percentage": 92.4}, "seven_day": {"used_percentage": 30}}
+        }"#;
+        let expected = concat!(
+            "\x1b[33mOpus 5.5 (high)\x1b[0m ",
+            "\x1b[33m\u{2588}\u{2588}\u{2588}\u{2588}\u{2588}\x1b[0m",
+            "\x1b[90m\u{2591}\u{2591}\u{2591}\u{2591}\u{2591}\x1b[0m \x1b[33m46%\x1b[0m ",
+            "\x1b[32m$1.24\x1b[0m \x1b[31m5h:92%\x1b[0m \x1b[37m7d:30%\x1b[0m\n",
+            "\x1b[34m~\\src\\app\x1b[0m \x1b[32m(master*)\x1b[0m",
+        );
+        assert_eq!(render(&input(json), HOME, true, "master*"), expected);
+    }
+
+    #[test]
+    fn bar_fills_by_rounded_percentage() {
+        assert_eq!(bar(0.0), "\u{2591}".repeat(10) + " 0%");
+        assert_eq!(bar(4.4), "\u{2591}".repeat(10) + " 4%");
+        assert_eq!(
+            bar(4.9),
+            "\u{2588}".to_string() + &"\u{2591}".repeat(9) + " 5%"
+        );
+        assert_eq!(
+            bar(45.5),
+            "\u{2588}".repeat(5) + &"\u{2591}".repeat(5) + " 46%"
+        );
+        assert_eq!(bar(95.0), "\u{2588}".repeat(10) + " 95%");
+        assert_eq!(bar(150.0), "\u{2588}".repeat(10) + " 150%");
+    }
+
+    #[test]
+    fn bar_color_follows_thresholds() {
+        let color = |pct: f64| {
+            let json = format!(r#"{{"context_window":{{"used_percentage":{pct}}}}}"#);
+            render(&input(&json), HOME, true, "")[..5].to_string()
+        };
+        assert_eq!(color(40.0), "\x1b[32m");
+        assert_eq!(color(41.0), "\x1b[33m");
+        assert_eq!(color(90.0), "\x1b[33m");
+        assert_eq!(color(91.0), "\x1b[31m");
+    }
+
+    #[test]
+    fn invalid_or_empty_input_renders_empty_lines() {
+        for raw in ["", "null", "42", "not json", "[1,2]"] {
+            assert_eq!(
+                render(&input(raw), HOME, true, ""),
+                "\n\x1b[34m\x1b[0m",
+                "input {raw:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn non_numeric_values_are_skipped() {
+        let json = r#"{
+            "context_window": {"used_percentage": "x"},
+            "cost": {"total_cost_usd": null},
+            "rate_limits": {"five_hour": {"used_percentage": "oops"}, "seven_day": {"used_percentage": 12}}
+        }"#;
+        assert_eq!(first_line(json), "7d:12%");
+    }
+
+    #[test]
+    fn missing_effort_shows_model_only() {
+        assert_eq!(
+            first_line(r#"{"model":{"display_name":"Sonnet 5.5"}}"#),
+            "Sonnet 5.5"
+        );
+    }
+
+    #[test]
+    fn output_style_shown_only_when_not_default() {
+        assert_eq!(first_line(r#"{"output_style":{"name":"default"}}"#), "");
+        assert_eq!(
+            first_line(r#"{"output_style":{"name":"Explanatory"}}"#),
+            "Explanatory"
+        );
+    }
+
+    #[test]
+    fn cwd_falls_back_to_top_level_field() {
+        let out = render(&input(r#"{"cwd":"D:\\work"}"#), HOME, true, "");
+        assert_eq!(plain(&out), "\nD:\\work");
+    }
+
+    #[test]
+    fn home_is_case_insensitive_on_windows_only() {
+        assert_eq!(shorten_home(r"c:\users\ALEX\x", HOME, true), r"~\x");
+        assert_eq!(
+            shorten_home("/Home/alex/x", "/home/alex", false),
+            "/Home/alex/x"
+        );
+        assert_eq!(shorten_home("/home/alex/x", "/home/alex", false), "~/x");
+    }
+
+    #[test]
+    fn home_must_end_at_a_separator() {
+        assert_eq!(
+            shorten_home(r"C:\Users\alex2\x", HOME, true),
+            r"C:\Users\alex2\x"
+        );
+        assert_eq!(
+            shorten_home("/home/alexander", "/home/alex", false),
+            "/home/alexander"
+        );
+    }
+
+    #[test]
+    fn home_itself_becomes_tilde() {
+        assert_eq!(shorten_home(HOME, HOME, true), "~");
+    }
+
+    #[test]
+    fn empty_home_or_cwd_is_left_alone() {
+        assert_eq!(shorten_home("/srv/app", "", false), "/srv/app");
+        assert_eq!(shorten_home("", HOME, true), "");
+    }
+}

@@ -1,0 +1,19 @@
+[package]
+name = "claude-code-statusline"
+# Releases use CalVer (YYYY.MM.DD), injected at build time through
+# STATUSLINE_VERSION; this crate is never published, so this stays 0.0.0.
+version = "0.0.0"
+edition = "2024"
+description = "A fast, cross-platform status line for Claude Code"
+license = "MIT"
+repository = "https://github.com/yuri-maxiutenko/claude-code-statusline"
+publish = false
+
+[dependencies]
+serde_json = "1"
+
+[profile.release]
+lto = true
+codegen-units = 1
+panic = "abort"
+strip = true
