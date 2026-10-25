@@ -37,6 +37,41 @@ fn paint(code: u8, text: &str) -> String {
     format!("\x1b[{code}m{text}\x1b[0m")
 }
 
+/// Formats an amount to cents, rounding half away from zero on its decimal
+/// value rather than on the f64 approximation: 0.145 is stored as
+/// 0.14499999…, which `{:.2}` would show as 0.14.
+pub fn money(amount: f64) -> String {
+    // Display gives the shortest decimal that reads back as the same f64 (so
+    // the amount as Claude Code wrote it), and never uses exponent notation
+    let text = amount.abs().to_string();
+    let (int, frac) = text.split_once('.').unwrap_or((&text, ""));
+    let mut digits: Vec<u8> = format!("{int}{frac:0<2.2}").into_bytes();
+
+    if frac.as_bytes().get(2).is_some_and(|&d| d >= b'5') {
+        // Carry the round-up through the digits, e.g. 9.995 -> 10.00
+        match digits.iter().rposition(|&d| d != b'9') {
+            Some(i) => {
+                digits[i] += 1;
+                digits[i + 1..].fill(b'0');
+            }
+            None => {
+                digits.fill(b'0');
+                digits.insert(0, b'1');
+            }
+        }
+    }
+
+    // A negative amount that rounds to zero shows as 0.00, not -0.00
+    let sign = if amount < 0.0 && digits.iter().any(|&d| d != b'0') {
+        "-"
+    } else {
+        ""
+    };
+    let digits = String::from_utf8(digits).expect("ASCII digits");
+    let (int, cents) = digits.split_at(digits.len() - 2);
+    format!("{sign}{int}.{cents}")
+}
+
 /// Replaces the home directory with `~`. Paths are case-insensitive only on
 /// Windows, and the next character must be a separator so /home/al doesn't
 /// match /home/alex.
@@ -104,7 +139,7 @@ pub fn render(input: &Value, home: &str, windows: bool, branch: &str) -> String 
 
     // Session cost, when Claude Code reports one
     if let Some(cost) = number(input, "/cost/total_cost_usd") {
-        parts.push(paint(32, &format!("${cost:.2}")));
+        parts.push(paint(32, &format!("${}", money(cost))));
     }
 
     // Claude.ai subscription rate limits (5h / 7d), white until they pass 90%
@@ -285,5 +320,51 @@ mod tests {
     fn empty_home_or_cwd_is_left_alone() {
         assert_eq!(shorten_home("/srv/app", "", false), "/srv/app");
         assert_eq!(shorten_home("", HOME, true), "");
+    }
+
+    #[test]
+    fn money_rounds_decimal_ties_away_from_zero() {
+        // Each of these is stored just below the tie, so {:.2} rounds it down
+        assert_eq!(money(0.145), "0.15");
+        assert_eq!(money(1.005), "1.01");
+        assert_eq!(money(2.675), "2.68");
+        // Exact binary ties, which {:.2} rounds to even
+        assert_eq!(money(0.125), "0.13");
+        assert_eq!(money(0.375), "0.38");
+        assert_eq!(money(1.235), "1.24");
+    }
+
+    #[test]
+    fn money_rounds_non_ties_to_nearest_cent() {
+        assert_eq!(money(0.994), "0.99");
+        assert_eq!(money(0.1449), "0.14");
+        assert_eq!(money(0.0000001), "0.00");
+    }
+
+    #[test]
+    fn money_carries_round_up_into_whole_dollars() {
+        assert_eq!(money(9.995), "10.00");
+        assert_eq!(money(99.999), "100.00");
+        assert_eq!(money(0.996), "1.00");
+    }
+
+    #[test]
+    fn money_pads_to_two_decimals() {
+        assert_eq!(money(0.0), "0.00");
+        assert_eq!(money(5.0), "5.00");
+        assert_eq!(money(0.1), "0.10");
+        assert_eq!(money(12345.6), "12345.60");
+    }
+
+    #[test]
+    fn money_signs_only_non_zero_negatives() {
+        assert_eq!(money(-0.0), "0.00");
+        assert_eq!(money(-0.001), "0.00");
+        assert_eq!(money(-0.145), "-0.15");
+    }
+
+    #[test]
+    fn cost_is_shown_with_decimal_rounding() {
+        assert_eq!(first_line(r#"{"cost":{"total_cost_usd":0.145}}"#), "$0.15");
     }
 }
