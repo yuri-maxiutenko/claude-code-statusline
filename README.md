@@ -15,7 +15,7 @@ Opus 5.5 (high) █████░░░░░ 46% $1.24 5h:23% 7d:41%
 - The model, with the effort level in parentheses.
 - The output style, only when it isn't `default`.
 - Context window usage as a 10-cell bar and a percentage: green up to 40%, amber above 40%, red above 90%.
-- The session cost in USD.
+- The session cost in USD, rounded to cents half away from zero on the amount Claude Code reports, so `0.145` shows as `$0.15`. Rounding the binary floating-point value instead, as most formatters do, would show `$0.14`.
 - Claude.ai subscription rate limits for the 5-hour and 7-day windows, red above 90%.
 
 **Second line**

@@ -42,12 +42,13 @@ fn run_status(dir: &str) -> Option<String> {
     let mut child = cmd.spawn().ok()?;
     let mut stdout = child.stdout.take()?;
 
-    // Read on a separate thread so the main one can give up after TIMEOUT
+    // Read on a separate thread so the main one can give up after TIMEOUT.
+    // Decoded leniently: a non-UTF-8 file or branch name mustn't hide the branch.
     let (tx, rx) = mpsc::channel();
     thread::spawn(move || {
-        let mut out = String::new();
-        let read = stdout.read_to_string(&mut out).is_ok();
-        let _ = tx.send(read.then_some(out));
+        let mut out = Vec::new();
+        let read = stdout.read_to_end(&mut out).is_ok();
+        let _ = tx.send(read.then(|| String::from_utf8_lossy(&out).into_owned()));
     });
 
     match rx.recv_timeout(TIMEOUT) {
