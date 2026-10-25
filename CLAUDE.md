@@ -30,6 +30,10 @@ echo '{"model":{"display_name":"Opus"}}' | cargo run -q   # try it by hand
 - Code must build and behave the same on all three OSes. Platform differences go behind `cfg!(windows)` / `#[cfg(windows)]` (home folder variable, case-insensitive paths, `CREATE_NO_WINDOW`).
 - **Versioning is CalVer `YYYY.MM.DD`** (UTC, with a `.N` suffix for repeated same-day releases). `Cargo.toml` stays at `0.0.0`; the release workflow injects the version through `STATUSLINE_VERSION`.
 - **Branch flow**: all changes go through pull requests into `master`. Never commit or push to `master` directly. Branches are named `<type>/short-description` (`fix/...`, `feat/...`, `ci/...`), and PRs are opened as drafts. CI (`.github/workflows/ci.yml`) runs on PRs and on pushes to `master`.
+- **PRs are usually rebase-merged**, so their commits land on `master` with new hashes and the PR branch's own commits never become ancestors of `master`:
+  - Start every branch from a freshly fetched `origin/master` (`git fetch --prune` first), never from another PR's branch or a merged one. Avoid stacked PRs.
+  - If a PR must be stacked, then once its base PR merges, replay only its own commits with `git rebase --onto origin/master <old base tip>` and push with `--force-with-lease`. GitHub retargets the PR to `master`, but it shows conflicts until this is done.
+  - A merged local branch can't be removed with `git branch -d`, because git doesn't see it as merged. Check the PR is merged, then use `-D`.
 - **Releases** are manual and only from `master`: run the **Release** workflow from the Actions tab. It computes the version, builds all four targets, tags `vYYYY.MM.DD` and publishes the GitHub release with auto-generated notes. Afterwards, move the `[Unreleased]` changelog entries under a heading for the new version.
 - `CHANGELOG.md` follows Keep a Changelog; add user-visible changes under `[Unreleased]`.
 - **Attribution**: never add a `Co-Authored-By: Claude` trailer to commits. PR descriptions and PR comments written by Claude may carry a marker (e.g. a "🤖 Generated with Claude Code" footer) so they can be told apart from ones written by a human.
