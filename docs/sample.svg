@@ -1,7 +1,7 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="520" height="76" viewBox="0 0 520 76" role="img" aria-label="Sample status line: Opus 5.5 (high), context bar at 46%, $1.24, 5h:23%, 7d:41%, then ~/source/repos/my-app (master*)">
+<svg xmlns="http://www.w3.org/2000/svg" width="520" height="76" viewBox="0 0 520 76" role="img" aria-label="Sample status line: Opus 5.5 (high), context bar at 46%, $1.24, 5h:23%, 7d:41%, then ~/source/repos/my-app (feat/login* #12) with an approved pull request">
   <rect width="520" height="76" rx="8" fill="#1e1f22"/>
   <g font-family="Cascadia Mono, Consolas, Menlo, 'DejaVu Sans Mono', monospace" font-size="14" xml:space="preserve">
     <text x="16" y="30"><tspan fill="#e5c07b">Opus 5.5 (high)</tspan> <tspan fill="#e5c07b">█████</tspan><tspan fill="#5c6370">░░░░░</tspan> <tspan fill="#e5c07b">46%</tspan> <tspan fill="#98c379">$1.24</tspan> <tspan fill="#dcdfe4">5h:23%</tspan> <tspan fill="#dcdfe4">7d:41%</tspan></text>
-    <text x="16" y="54"><tspan fill="#61afef">~/source/repos/my-app</tspan> <tspan fill="#98c379">(master*)</tspan></text>
+    <text x="16" y="54"><tspan fill="#61afef">~/source/repos/my-app</tspan> <tspan fill="#98c379">(feat/login* </tspan><tspan fill="#98c379" text-decoration="underline">#12</tspan><tspan fill="#98c379">)</tspan></text>
   </g>
 </svg>

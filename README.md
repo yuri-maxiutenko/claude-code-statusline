@@ -6,7 +6,7 @@ A fast, cross-platform [status line](https://code.claude.com/docs/en/statusline)
 
 ```text
 Opus 5.5 (high) █████░░░░░ 46% $1.24 5h:23% 7d:41%
-~/source/repos/my-app (master*)
+~/source/repos/my-app (feat/login* #12)
 ```
 
 ## What it shows
@@ -21,6 +21,7 @@ Opus 5.5 (high) █████░░░░░ 46% $1.24 5h:23% 7d:41%
 **Second line**
 - The working directory, with your home folder shortened to `~`.
 - The git branch, with `*` when tracked files have uncommitted changes. A detached HEAD shows the short commit hash.
+- The branch's open pull request number, such as `#12` (`!12` for a GitLab merge request), next to the branch. It's a clickable link in terminals that support OSC 8 hyperlinks, and its color shows the review state: green approved, red changes requested, gray draft, white pending. Claude Code supplies the PR details, so this costs no extra network call.
 
 Any field Claude Code doesn't send is left out. `git` must be on `PATH`. If `git status` takes longer than 2 seconds (for example a network share, or a Windows drive under WSL's `/mnt/c`), the branch is left out for that run.
 
