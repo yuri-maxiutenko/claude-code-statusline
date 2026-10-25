@@ -95,7 +95,7 @@ jobs:
           tar -czf "out/$ARCHIVE.tar.gz" -C "target/$TARGET/release" claude-code-statusline -C "$GITHUB_WORKSPACE" README.md LICENSE
 
       - name: Upload archive
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: ${{ matrix.target }}
           path: out/*
