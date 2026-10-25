@@ -18,6 +18,8 @@ env:
 
 jobs:
   version:
+    # Releases come from master only; build and publish are skipped with this job
+    if: github.ref == 'refs/heads/master'
     runs-on: ubuntu-latest
     outputs:
       version: ${{ steps.calver.outputs.version }}
@@ -54,6 +56,7 @@ jobs:
             os: macos-latest
           - target: x86_64-apple-darwin
             os: macos-latest
+            cross: true
     runs-on: ${{ matrix.os }}
     env:
       STATUSLINE_VERSION: ${{ needs.version.outputs.version }}
@@ -72,9 +75,16 @@ jobs:
         if: contains(matrix.target, 'musl')
         run: sudo apt-get update && sudo apt-get install -y musl-tools
 
-      # Tests run for the runner's own target, since the x86_64 macOS build is
-      # cross-compiled on an arm64 runner.
+      # Tests run against the shipped target (so the musl build is tested too),
+      # except the x86_64 macOS one, which is cross-compiled on an arm64 runner
+      # and can only be tested for the runner's own target.
       - name: Run tests
+        if: ${{ !matrix.cross }}
+        run: cargo test --locked --target "$TARGET"
+        shell: bash
+
+      - name: Run tests (runner target)
+        if: ${{ matrix.cross }}
         run: cargo test --locked
 
       - name: Build
