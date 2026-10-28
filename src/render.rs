@@ -123,8 +123,8 @@ pub fn countdown(reset: f64, now: i64) -> Option<String> {
 }
 
 /// `now` is the current Unix time in seconds, for the rate-limit countdowns.
-/// Segments in `hidden` are left out; the git branch is hidden by passing an
-/// empty `branch`.
+/// Segments in `hidden` are left out, and the second line too when both `dir`
+/// and `git` are hidden, so its height doesn't depend on being in a repo.
 pub fn render(
     input: &Value,
     home: &str,
@@ -137,8 +137,12 @@ pub fn render(
 
     // Model, with the effort level and fast mode in parentheses
     if let Some(model) = text(input, "/model/display_name") {
-        let effort = text(input, "/effort/level").filter(|_| !hidden.effort);
-        let fast = flag(input, "/fast_mode") && !hidden.fast;
+        let effort = if hidden.effort {
+            None
+        } else {
+            text(input, "/effort/level")
+        };
+        let fast = !hidden.fast && flag(input, "/fast_mode");
         let label = match (effort, fast) {
             (Some(level), true) => format!("{model} ({level}, fast)"),
             (Some(level), false) => format!("{model} ({level})"),
@@ -149,14 +153,15 @@ pub fn render(
     }
 
     // Output style (only shown when not the default)
-    if let Some(style) =
-        text(input, "/output_style/name").filter(|s| *s != "default" && !hidden.style)
+    if !hidden.style
+        && let Some(style) = text(input, "/output_style/name").filter(|s| *s != "default")
     {
         parts.push(paint(37, style));
     }
 
     // Context usage, drawn as a bar with the consumed share filled in
-    if let Some(used) = number(input, "/context_window/used_percentage").filter(|_| !hidden.context)
+    if !hidden.context
+        && let Some(used) = number(input, "/context_window/used_percentage")
     {
         const WIDTH: i64 = 10;
         let pct = used.round() as i64;
@@ -185,7 +190,9 @@ pub fn render(
     }
 
     // Session cost, when Claude Code reports one
-    if let Some(cost) = number(input, "/cost/total_cost_usd").filter(|_| !hidden.cost) {
+    if !hidden.cost
+        && let Some(cost) = number(input, "/cost/total_cost_usd")
+    {
         parts.push(paint(32, &format!("${}", money(cost))));
     }
 
@@ -195,34 +202,33 @@ pub fn render(
         ("5h", "/rate_limits/five_hour"),
         ("7d", "/rate_limits/seven_day"),
     ] {
-        if let Some(used) =
-            number(input, &format!("{window}/used_percentage")).filter(|_| !hidden.limits)
+        if !hidden.limits
+            && let Some(used) = number(input, &format!("{window}/used_percentage"))
         {
             let n = used.round() as i64;
             parts.push(paint(if n > 90 { 31 } else { 37 }, &format!("{name}:{n}%")));
-            if let Some(left) = number(input, &format!("{window}/resets_at"))
-                .filter(|_| !hidden.resets)
-                .and_then(|reset| countdown(reset, now))
+            if !hidden.resets
+                && let Some(left) = number(input, &format!("{window}/resets_at"))
+                    .and_then(|reset| countdown(reset, now))
             {
                 parts.push(paint(90, &format!("\u{21bb}{left}")));
             }
         }
     }
 
-    // Second line: directory and git branch, left out when both are hidden
+    // Second line: directory and git branch
+    if hidden.dir && hidden.git {
+        return parts.join(" ");
+    }
     let mut repo = Vec::new();
     if !hidden.dir {
         repo.push(paint(34, &shorten_home(cwd(input), home, windows)));
     }
-    if !branch.is_empty() {
+    if !hidden.git && !branch.is_empty() {
         repo.push(paint(32, &format!("({branch})")));
     }
 
-    if repo.is_empty() {
-        parts.join(" ")
-    } else {
-        format!("{}\n{}", parts.join(" "), repo.join(" "))
-    }
+    format!("{}\n{}", parts.join(" "), repo.join(" "))
 }
 
 #[cfg(test)]
@@ -337,13 +343,18 @@ mod tests {
             show(first, "main"),
             format!("Opus (fast) Explanatory {bar} $1.00\n(main)")
         );
+        // Hiding only dir keeps the second line, even outside a repo
+        let dir = || Hidden {
+            dir: true,
+            ..Hidden::default()
+        };
+        assert!(show(dir(), "").ends_with('\n'));
         let no_repo = Hidden {
             dir: true,
             git: true,
             ..Hidden::default()
         };
-        // main passes an empty branch when git is hidden
-        assert!(!show(no_repo, "").contains('\n'));
+        assert!(!show(no_repo, "main").contains('\n'));
     }
 
     #[test]

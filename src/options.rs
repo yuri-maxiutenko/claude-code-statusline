@@ -2,9 +2,29 @@
 
 use std::ffi::OsString;
 
-/// Segments `--hide` can leave out, in display order.
-pub const SEGMENTS: [&str; 9] = [
-    "effort", "fast", "style", "context", "cost", "limits", "resets", "dir", "git",
+/// A segment `--hide` can leave out: its name, what it is for `--help`, and
+/// its field in `Hidden`.
+type Segment = (&'static str, &'static str, fn(&mut Hidden) -> &mut bool);
+
+/// Every segment, in display order. This is the one list to extend.
+const SEGMENTS: [Segment; 9] = [
+    ("effort", "the effort level", |h| &mut h.effort),
+    ("fast", "the fast mode tag", |h| &mut h.fast),
+    ("style", "the output style", |h| &mut h.style),
+    ("context", "the context usage bar", |h| &mut h.context),
+    ("cost", "the session cost", |h| &mut h.cost),
+    (
+        "limits",
+        "the 5h / 7d rate limits, with their countdowns",
+        |h| &mut h.limits,
+    ),
+    ("resets", "only the rate-limit countdowns", |h| {
+        &mut h.resets
+    }),
+    ("dir", "the working directory", |h| &mut h.dir),
+    ("git", "the git branch, and skips running git", |h| {
+        &mut h.git
+    }),
 ];
 
 /// Which segments to leave out; everything is shown by default.
@@ -23,22 +43,16 @@ pub struct Hidden {
 }
 
 impl Hidden {
-    /// Hides the segment called `name`; false if there is no such segment.
+    /// Hides the segment called `name`, ignoring case; false if there is no
+    /// such segment.
     fn hide(&mut self, name: &str) -> bool {
-        let segment = match name {
-            "effort" => &mut self.effort,
-            "fast" => &mut self.fast,
-            "style" => &mut self.style,
-            "context" => &mut self.context,
-            "cost" => &mut self.cost,
-            "limits" => &mut self.limits,
-            "resets" => &mut self.resets,
-            "dir" => &mut self.dir,
-            "git" => &mut self.git,
-            _ => return false,
-        };
-        *segment = true;
-        true
+        match SEGMENTS.iter().find(|(n, ..)| n.eq_ignore_ascii_case(name)) {
+            Some((.., field)) => {
+                *field(self) = true;
+                true
+            }
+            None => false,
+        }
     }
 }
 
@@ -59,19 +73,22 @@ pub enum Command {
 pub fn parse(args: impl IntoIterator<Item = OsString>) -> Command {
     let mut hidden = Hidden::default();
     let mut warnings = Vec::new();
-    let mut args = args.into_iter();
+    let mut args = args.into_iter().peekable();
 
     while let Some(arg) = args.next() {
         let list = match arg.to_str() {
             Some("--version") => return Command::Version,
             Some("--help") => return Command::Help,
-            Some("--hide") => match args.next() {
-                Some(list) => list,
-                None => {
-                    warnings.push("--hide needs a list of segments".to_string());
-                    continue;
+            // A following flag isn't a list: leave it to be read as a flag
+            Some("--hide") => {
+                match args.next_if(|next| !next.to_string_lossy().starts_with("--")) {
+                    Some(list) => list,
+                    None => {
+                        warnings.push("--hide needs a list of segments".to_string());
+                        continue;
+                    }
                 }
-            },
+            }
             Some(arg) if arg.starts_with("--hide=") => OsString::from(&arg["--hide=".len()..]),
             _ => {
                 warnings.push(format!("unknown argument {arg:?}"));
@@ -91,19 +108,24 @@ pub fn parse(args: impl IntoIterator<Item = OsString>) -> Command {
 }
 
 pub fn help() -> String {
+    let segments: String = SEGMENTS
+        .iter()
+        .map(|(name, about, _)| format!("    {name:<9}{about}\n"))
+        .collect();
     format!(
         "\
 A Claude Code status line. Reads the session JSON on stdin and prints the status line.
 
-Usage: claude-code-statusline [--hide <segments>]
+Usage: claude-code-statusline [--hide <segments>]...
 
 Options:
-  --hide <segments>  Comma-separated segments to leave out:
-                     {}
+  --hide <segments>  Leave out segments, comma-separated: --hide a,b or --hide=a,b.
+                     May repeat. Names ignore case; unknown ones warn on stderr.
   --version          Print the version
   --help             Print this help
-",
-        SEGMENTS.join(", ")
+
+Segments:
+{segments}"
     )
 }
 
@@ -147,7 +169,8 @@ mod tests {
 
     #[test]
     fn every_listed_segment_can_be_hidden() {
-        let all = hidden(&["--hide", &SEGMENTS.join(",")]);
+        let names: Vec<&str> = SEGMENTS.iter().map(|(name, ..)| *name).collect();
+        let all = hidden(&["--hide", &names.join(",")]);
         assert_eq!(
             all,
             Hidden {
@@ -189,13 +212,29 @@ mod tests {
     }
 
     #[test]
+    fn names_ignore_case() {
+        let expected = Hidden {
+            cost: true,
+            git: true,
+            ..Hidden::default()
+        };
+        assert_eq!(hidden(&["--hide", "Cost,GIT"]), expected);
+    }
+
+    #[test]
     fn version_and_help_win() {
         assert_eq!(run(&["--version"]), Command::Version);
         assert_eq!(run(&["--hide", "cost", "--help"]), Command::Help);
+        // A bare --hide doesn't swallow the flag after it
+        assert_eq!(run(&["--hide", "--version"]), Command::Version);
+        assert_eq!(run(&["--hide", "--help"]), Command::Help);
     }
 
     #[test]
     fn help_lists_every_segment() {
-        assert!(help().contains(&SEGMENTS.join(", ")));
+        let help = help();
+        for (name, about, _) in SEGMENTS {
+            assert!(help.contains(&format!("{name:<9}{about}")), "{name}");
+        }
     }
 }

@@ -79,7 +79,7 @@ To leave segments out, pass `--hide` with a comma-separated list in the `command
 | `dir` | The working directory |
 | `git` | The git branch. It also skips running `git` entirely, which helps on slow drives |
 
-The model name is always shown. Hiding both `dir` and `git` drops the second line. An unknown segment name is ignored with a warning on stderr, so a typo never blanks the status line. `claude-code-statusline --help` lists the segment names.
+The model name is always shown. Hiding both `dir` and `git` drops the second line; hiding just one keeps it, so the status line's height doesn't change between folders. Segment names ignore case. An unknown name is ignored with a warning on stderr, so a typo never blanks the status line, but Claude Code doesn't show stderr: check `claude-code-statusline --help` for the names.
 
 ## Build from source
 
