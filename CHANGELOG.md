@@ -8,7 +8,7 @@ and this project uses [Calendar Versioning](https://calver.org/) (`YYYY.MM.DD`, 
 ## [Unreleased]
 
 ### Added
-- `fast` after the effort level when fast mode is on, such as `Opus 5.5 (high, fast)`.
+- `fast` in the model's parentheses when fast mode is on: `Opus 5.5 (high, fast)`, or `Opus 5.5 (fast)` when there's no effort level.
 
 ## [2026.10.28]
 

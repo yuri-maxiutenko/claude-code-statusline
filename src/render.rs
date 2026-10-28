@@ -26,6 +26,11 @@ fn number(input: &Value, pointer: &str) -> Option<f64> {
         .filter(|n| n.is_finite())
 }
 
+/// Whether `pointer` holds `true`; anything else, including a missing value, is false.
+fn flag(input: &Value, pointer: &str) -> bool {
+    input.pointer(pointer).and_then(Value::as_bool) == Some(true)
+}
+
 /// The session's working directory, or an empty string.
 pub fn cwd(input: &Value) -> &str {
     text(input, "/workspace/current_dir")
@@ -121,15 +126,11 @@ pub fn render(input: &Value, home: &str, windows: bool, branch: &str, now: i64) 
 
     // Model, with the effort level and fast mode in parentheses
     if let Some(model) = text(input, "/model/display_name") {
-        let fast = input.pointer("/fast_mode").and_then(Value::as_bool) == Some(true);
-        let extra: Vec<&str> = text(input, "/effort/level")
-            .into_iter()
-            .chain(fast.then_some("fast"))
-            .collect();
-        let label = if extra.is_empty() {
-            model.to_string()
-        } else {
-            format!("{model} ({})", extra.join(", "))
+        let label = match (text(input, "/effort/level"), flag(input, "/fast_mode")) {
+            (Some(level), true) => format!("{model} ({level}, fast)"),
+            (Some(level), false) => format!("{model} ({level})"),
+            (None, true) => format!("{model} (fast)"),
+            (None, false) => model.to_string(),
         };
         parts.push(paint(33, &label));
     }
@@ -239,6 +240,7 @@ mod tests {
         let json = r#"{
             "model": {"display_name": "Opus 5.5"},
             "effort": {"level": "high"},
+            "fast_mode": false,
             "workspace": {"current_dir": "C:\\Users\\alex\\src\\app"},
             "context_window": {"used_percentage": 45.5},
             "cost": {"total_cost_usd": 1.235},
