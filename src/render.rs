@@ -95,22 +95,23 @@ pub fn shorten_home(cwd: &str, home: &str, windows: bool) -> String {
     }
 }
 
-/// Time from `now` until `reset` (both Unix seconds), rounded up to the minute
-/// and shown in its two largest units: `3d4h`, `2h14m`, `9m`. None once
-/// `reset` has passed.
+/// Time from `now` until `reset` (both Unix seconds) in its two largest units,
+/// rounded up to the smaller one: `3d4h`, `2h14m`, `9m`. None once `reset` has
+/// passed.
 pub fn countdown(reset: f64, now: i64) -> Option<String> {
     let secs = reset - now as f64;
     if secs <= 0.0 {
         return None;
     }
     let mins = (secs / 60.0).ceil() as i64;
-    let (days, hours, mins) = (mins / 1440, mins / 60 % 24, mins % 60);
-    Some(if days > 0 {
-        format!("{days}d{hours}h")
-    } else if hours > 0 {
-        format!("{hours}h{mins}m")
-    } else {
+    Some(if mins < 60 {
         format!("{mins}m")
+    } else if mins < 1440 {
+        format!("{}h{}m", mins / 60, mins % 60)
+    } else {
+        // Whole days drop the minutes, so round up to the hour instead
+        let hours = (mins + 59) / 60;
+        format!("{}d{}h", hours / 24, hours % 24)
     })
 }
 
@@ -413,9 +414,11 @@ mod tests {
         assert_eq!(at(61).as_deref(), Some("2m"));
         assert_eq!(at(3_599).as_deref(), Some("1h0m"));
         assert_eq!(at(8_040).as_deref(), Some("2h14m"));
+        assert_eq!(at(86_340).as_deref(), Some("23h59m"));
         assert_eq!(at(86_400).as_deref(), Some("1d0h"));
-        assert_eq!(at(273_600 + 3_540).as_deref(), Some("3d4h"));
-        assert_eq!(at(273_600 + 3_599).as_deref(), Some("3d5h"));
+        assert_eq!(at(86_401).as_deref(), Some("1d1h"));
+        assert_eq!(at(273_600).as_deref(), Some("3d4h"));
+        assert_eq!(at(273_600 + 1_800).as_deref(), Some("3d5h"));
         assert_eq!(at(0), None);
         assert_eq!(at(-30), None);
     }
