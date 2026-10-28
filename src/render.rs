@@ -119,11 +119,17 @@ pub fn countdown(reset: f64, now: i64) -> Option<String> {
 pub fn render(input: &Value, home: &str, windows: bool, branch: &str, now: i64) -> String {
     let mut parts = Vec::new();
 
-    // Model, with the effort level in parentheses
+    // Model, with the effort level and fast mode in parentheses
     if let Some(model) = text(input, "/model/display_name") {
-        let label = match text(input, "/effort/level") {
-            Some(level) => format!("{model} ({level})"),
-            None => model.to_string(),
+        let fast = input.pointer("/fast_mode").and_then(Value::as_bool) == Some(true);
+        let extra: Vec<&str> = text(input, "/effort/level")
+            .into_iter()
+            .chain(fast.then_some("fast"))
+            .collect();
+        let label = if extra.is_empty() {
+            model.to_string()
+        } else {
+            format!("{model} ({})", extra.join(", "))
         };
         parts.push(paint(33, &label));
     }
@@ -310,6 +316,32 @@ mod tests {
             first_line(r#"{"model":{"display_name":"Sonnet 5.5"}}"#),
             "Sonnet 5.5"
         );
+    }
+
+    #[test]
+    fn fast_mode_follows_effort_in_parentheses() {
+        let model = r#""model":{"display_name":"Opus"}"#;
+        assert_eq!(
+            first_line(&format!(
+                r#"{{{model},"effort":{{"level":"high"}},"fast_mode":true}}"#
+            )),
+            "Opus (high, fast)"
+        );
+        assert_eq!(
+            first_line(&format!(r#"{{{model},"fast_mode":true}}"#)),
+            "Opus (fast)"
+        );
+        assert_eq!(
+            first_line(&format!(
+                r#"{{{model},"effort":{{"level":"high"}},"fast_mode":false}}"#
+            )),
+            "Opus (high)"
+        );
+        assert_eq!(
+            first_line(&format!(r#"{{{model},"fast_mode":"yes"}}"#)),
+            "Opus"
+        );
+        assert_eq!(first_line(r#"{"fast_mode":true}"#), "");
     }
 
     #[test]
