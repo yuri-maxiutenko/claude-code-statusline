@@ -88,7 +88,7 @@ pub fn parse_status(status: &str) -> String {
             let mut xy = entry.chars();
             staged |= xy.next().is_some_and(|c| c != '.');
             unstaged |= xy.next().is_some_and(|c| c != '.');
-        } else if !line.is_empty() && !line.starts_with('#') {
+        } else if line.starts_with("u ") {
             // Unmerged entry: still to be resolved in the work tree
             unstaged = true;
         }
@@ -175,6 +175,12 @@ mod tests {
         let status =
             format!("{OID}\n# branch.head main\nu UU N... 100644 100644 100644 100644 a b c x\n");
         assert_eq!(parse_status(&status), "main*");
+    }
+
+    #[test]
+    fn untracked_and_ignored_entries_are_not_changes() {
+        let status = format!("{OID}\n# branch.head main\n? new.rs\n! target/\n");
+        assert_eq!(parse_status(&status), "main");
     }
 
     #[test]
