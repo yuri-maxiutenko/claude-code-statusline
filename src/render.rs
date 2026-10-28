@@ -95,7 +95,27 @@ pub fn shorten_home(cwd: &str, home: &str, windows: bool) -> String {
     }
 }
 
-pub fn render(input: &Value, home: &str, windows: bool, branch: &str) -> String {
+/// Time from `now` until `reset` (both Unix seconds), rounded up to the minute
+/// and shown in its two largest units: `3d4h`, `2h14m`, `9m`. None once
+/// `reset` has passed.
+pub fn countdown(reset: f64, now: i64) -> Option<String> {
+    let secs = reset - now as f64;
+    if secs <= 0.0 {
+        return None;
+    }
+    let mins = (secs / 60.0).ceil() as i64;
+    let (days, hours, mins) = (mins / 1440, mins / 60 % 24, mins % 60);
+    Some(if days > 0 {
+        format!("{days}d{hours}h")
+    } else if hours > 0 {
+        format!("{hours}h{mins}m")
+    } else {
+        format!("{mins}m")
+    })
+}
+
+/// `now` is the current Unix time in seconds, for the rate-limit countdowns.
+pub fn render(input: &Value, home: &str, windows: bool, branch: &str, now: i64) -> String {
     let mut parts = Vec::new();
 
     // Model, with the effort level in parentheses
@@ -145,14 +165,20 @@ pub fn render(input: &Value, home: &str, windows: bool, branch: &str) -> String 
         parts.push(paint(32, &format!("${}", money(cost))));
     }
 
-    // Claude.ai subscription rate limits (5h / 7d), white until they pass 90%
-    for (name, pointer) in [
-        ("5h", "/rate_limits/five_hour/used_percentage"),
-        ("7d", "/rate_limits/seven_day/used_percentage"),
+    // Claude.ai subscription rate limits (5h / 7d), white until they pass 90%,
+    // each followed by the time left until its window resets
+    for (name, window) in [
+        ("5h", "/rate_limits/five_hour"),
+        ("7d", "/rate_limits/seven_day"),
     ] {
-        if let Some(used) = number(input, pointer) {
+        if let Some(used) = number(input, &format!("{window}/used_percentage")) {
             let n = used.round() as i64;
             parts.push(paint(if n > 90 { 31 } else { 37 }, &format!("{name}:{n}%")));
+            if let Some(left) = number(input, &format!("{window}/resets_at"))
+                .and_then(|reset| countdown(reset, now))
+            {
+                parts.push(paint(90, &format!("\u{21bb}{left}")));
+            }
         }
     }
 
@@ -170,6 +196,7 @@ mod tests {
     use super::*;
 
     const HOME: &str = r"C:\Users\alex";
+    const NOW: i64 = 1_738_400_000;
 
     fn input(json: &str) -> Value {
         parse_input(json.as_bytes())
@@ -190,7 +217,7 @@ mod tests {
     }
 
     fn first_line(json: &str) -> String {
-        let out = render(&input(json), HOME, true, "");
+        let out = render(&input(json), HOME, true, "", NOW);
         plain(out.split('\n').next().unwrap())
     }
 
@@ -208,16 +235,23 @@ mod tests {
             "workspace": {"current_dir": "C:\\Users\\alex\\src\\app"},
             "context_window": {"used_percentage": 45.5},
             "cost": {"total_cost_usd": 1.235},
-            "rate_limits": {"five_hour": {"used_percentage": 92.4}, "seven_day": {"used_percentage": 30}}
+            "rate_limits": {
+                "five_hour": {"used_percentage": 92.4, "resets_at": 1738408040},
+                "seven_day": {"used_percentage": 30, "resets_at": 1738673600}
+            }
         }"#;
         let expected = concat!(
             "\x1b[33mOpus 5.5 (high)\x1b[0m ",
             "\x1b[33m\u{2588}\u{2588}\u{2588}\u{2588}\u{2588}\x1b[0m",
             "\x1b[90m\u{2591}\u{2591}\u{2591}\u{2591}\u{2591}\x1b[0m \x1b[33m46%\x1b[0m ",
-            "\x1b[32m$1.24\x1b[0m \x1b[31m5h:92%\x1b[0m \x1b[37m7d:30%\x1b[0m\n",
-            "\x1b[34m~\\src\\app\x1b[0m \x1b[32m(master*)\x1b[0m",
+            "\x1b[32m$1.24\x1b[0m \x1b[31m5h:92%\x1b[0m \x1b[90m\u{21bb}2h14m\x1b[0m ",
+            "\x1b[37m7d:30%\x1b[0m \x1b[90m\u{21bb}3d4h\x1b[0m\n",
+            "\x1b[34m~\\src\\app\x1b[0m \x1b[32m(master*+ \u{2191}2)\x1b[0m",
         );
-        assert_eq!(render(&input(json), HOME, true, "master*"), expected);
+        assert_eq!(
+            render(&input(json), HOME, true, "master*+ \u{2191}2", NOW),
+            expected
+        );
     }
 
     #[test]
@@ -240,7 +274,7 @@ mod tests {
     fn bar_color_follows_thresholds() {
         let color = |pct: f64| {
             let json = format!(r#"{{"context_window":{{"used_percentage":{pct}}}}}"#);
-            render(&input(&json), HOME, true, "")[..5].to_string()
+            render(&input(&json), HOME, true, "", NOW)[..5].to_string()
         };
         assert_eq!(color(40.0), "\x1b[32m");
         assert_eq!(color(41.0), "\x1b[33m");
@@ -252,7 +286,7 @@ mod tests {
     fn invalid_or_empty_input_renders_empty_lines() {
         for raw in ["", "null", "42", "not json", "[1,2]"] {
             assert_eq!(
-                render(&input(raw), HOME, true, ""),
+                render(&input(raw), HOME, true, "", NOW),
                 "\n\x1b[34m\x1b[0m",
                 "input {raw:?}"
             );
@@ -288,7 +322,7 @@ mod tests {
 
     #[test]
     fn cwd_falls_back_to_top_level_field() {
-        let out = render(&input(r#"{"cwd":"D:\\work"}"#), HOME, true, "");
+        let out = render(&input(r#"{"cwd":"D:\\work"}"#), HOME, true, "", NOW);
         assert_eq!(plain(&out), "\nD:\\work");
     }
 
@@ -372,6 +406,34 @@ mod tests {
     }
 
     #[test]
+    fn countdown_rounds_up_to_the_minute_in_two_units() {
+        let at = |secs: i64| countdown((NOW + secs) as f64, NOW);
+        assert_eq!(at(1).as_deref(), Some("1m"));
+        assert_eq!(at(60).as_deref(), Some("1m"));
+        assert_eq!(at(61).as_deref(), Some("2m"));
+        assert_eq!(at(3_599).as_deref(), Some("1h0m"));
+        assert_eq!(at(8_040).as_deref(), Some("2h14m"));
+        assert_eq!(at(86_400).as_deref(), Some("1d0h"));
+        assert_eq!(at(273_600 + 3_540).as_deref(), Some("3d4h"));
+        assert_eq!(at(273_600 + 3_599).as_deref(), Some("3d5h"));
+        assert_eq!(at(0), None);
+        assert_eq!(at(-30), None);
+    }
+
+    #[test]
+    fn reset_countdown_needs_a_future_reset_time() {
+        let limits = |reset: &str| {
+            first_line(&format!(
+                r#"{{"rate_limits":{{"five_hour":{{"used_percentage":10,"resets_at":{reset}}}}}}}"#
+            ))
+        };
+        assert_eq!(limits(&(NOW + 600).to_string()), "5h:10% \u{21bb}10m");
+        assert_eq!(limits(&(NOW - 600).to_string()), "5h:10%");
+        assert_eq!(limits(r#""soon""#), "5h:10%");
+        assert_eq!(limits("null"), "5h:10%");
+    }
+
+    #[test]
     fn control_characters_are_dropped_from_text_fields() {
         let json = r#"{
             "model": {"display_name": "Opus\u001b[2J"},
@@ -383,6 +445,6 @@ mod tests {
             "\x1b[33mOpus[2J (high)\x1b[0m \x1b[37mExplain\x1b[0m\n",
             "\x1b[34m/w/x]8;;http://ey\x1b[0m \x1b[32m(main)\x1b[0m",
         );
-        assert_eq!(render(&input(json), HOME, false, "ma\nin"), expected);
+        assert_eq!(render(&input(json), HOME, false, "ma\nin", NOW), expected);
     }
 }
