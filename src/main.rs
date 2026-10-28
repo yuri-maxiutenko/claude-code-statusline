@@ -4,6 +4,7 @@ mod git;
 mod render;
 
 use std::io::{Read, Write};
+use std::time::{SystemTime, UNIX_EPOCH};
 
 fn main() {
     // args_os: args() panics on a non-Unicode argument, including argv[0]
@@ -32,7 +33,13 @@ fn main() {
         .map(|path| path.to_string_lossy().into_owned())
         .unwrap_or_default();
 
+    // Unix time, for the rate-limit reset countdowns
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_or(0, |elapsed| elapsed.as_secs() as i64);
+
+    let out = render::render(&input, &home, windows, &branch, now);
     let mut stdout = std::io::stdout().lock();
-    let _ = stdout.write_all(render::render(&input, &home, windows, &branch).as_bytes());
+    let _ = stdout.write_all(out.as_bytes());
     let _ = stdout.flush();
 }

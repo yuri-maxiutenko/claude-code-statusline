@@ -5,8 +5,8 @@ A fast, cross-platform [status line](https://code.claude.com/docs/en/statusline)
 ![Sample status line](docs/sample.svg)
 
 ```text
-Opus 5.5 (high) █████░░░░░ 46% $1.24 5h:23% 7d:41%
-~/source/repos/my-app (master*)
+Opus 5.5 (high) █████░░░░░ 46% $1.24 5h:23% ↻2h14m 7d:41% ↻3d4h
+~/source/repos/my-app (master*+ ↑2)
 ```
 
 ## What it shows
@@ -16,11 +16,11 @@ Opus 5.5 (high) █████░░░░░ 46% $1.24 5h:23% 7d:41%
 - The output style, only when it isn't `default`.
 - Context window usage as a 10-cell bar and a percentage: green up to 40%, amber above 40%, red above 90%.
 - The session cost in USD, rounded to cents half away from zero on the amount Claude Code reports, so `0.145` shows as `$0.15`. Rounding the binary floating-point value instead, as most formatters do, would show `$0.14`.
-- Claude.ai subscription rate limits for the 5-hour and 7-day windows, red above 90%.
+- Claude.ai subscription rate limits for the 5-hour and 7-day windows, red above 90%, each followed by the time left until the window resets (`↻2h14m`, rounded up to the minute). The countdown only moves when Claude Code re-runs the status line, which it does on activity but not while the session sits idle. To keep it current while idle, add `"refreshInterval": 60` to the `statusLine` setting.
 
 **Second line**
 - The working directory, with your home folder shortened to `~`.
-- The git branch, with `*` when tracked files have uncommitted changes. A detached HEAD shows the short commit hash.
+- The git branch, with `*` when tracked files have unstaged changes (or unresolved conflicts) and `+` when changes are staged, then `↑n` / `↓n` for commits ahead of and behind its upstream. A detached HEAD shows the short commit hash.
 
 Any field Claude Code doesn't send is left out. `git` must be on `PATH`. If `git status` takes longer than 2 seconds (for example a network share, or a Windows drive under WSL's `/mnt/c`), the branch is left out for that run.
 

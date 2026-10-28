@@ -7,6 +7,11 @@ and this project uses [Calendar Versioning](https://calver.org/) (`YYYY.MM.DD`, 
 
 ## [Unreleased]
 
+### Added
+- The time left until each rate-limit window resets, after its percentage (`5h:23% ↻2h14m`).
+- Commits ahead of and behind the branch's upstream, after the branch (`(master ↑2↓1)`).
+- A `+` after the branch when changes are staged.
+
 ### Fixed
 - The cost is rounded to cents on its decimal value, half away from zero, so `0.145` shows as `$0.15` and `0.125` as `$0.13` (both were rounded down before).
 - A file or branch name that isn't valid UTF-8 no longer hides the git branch.
@@ -15,6 +20,7 @@ and this project uses [Calendar Versioning](https://calver.org/) (`YYYY.MM.DD`, 
 - Control characters in the directory, branch, model or output style name are dropped, so they can't inject terminal escape sequences into the status line.
 
 ### Changed
+- The `*` after the branch now means unstaged changes (or unresolved conflicts) only. A branch with only staged changes shows `+` instead.
 - Clippy runs on Windows, Linux and macOS in CI. The Release workflow runs only from `master` and tests the static Linux (musl) build it ships.
 
 ## [2026.10.25]
