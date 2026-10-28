@@ -2,6 +2,7 @@
 
 mod git;
 mod options;
+mod plan;
 mod render;
 
 use options::Command;
@@ -44,12 +45,28 @@ fn main() {
         .map(|path| path.to_string_lossy().into_owned())
         .unwrap_or_default();
 
+    // The plan isn't in the session JSON, so it comes from Claude Code's config
+    let plan = if hidden.plan {
+        None
+    } else {
+        plan::config_path(std::env::var_os("CLAUDE_CONFIG_DIR"), &home)
+            .and_then(|path| plan::read(&path))
+    };
+
     // Unix time, for the rate-limit reset countdowns
     let now = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map_or(0, |elapsed| elapsed.as_secs() as i64);
 
-    let out = render::render(&input, &home, windows, &branch, now, &hidden);
+    let out = render::render(
+        &input,
+        &home,
+        windows,
+        &branch,
+        plan.as_deref(),
+        now,
+        &hidden,
+    );
     let mut stdout = std::io::stdout().lock();
     let _ = stdout.write_all(out.as_bytes());
     let _ = stdout.flush();

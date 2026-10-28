@@ -5,7 +5,7 @@ A fast, cross-platform [status line](https://code.claude.com/docs/en/statusline)
 ![Sample status line](docs/sample.svg)
 
 ```text
-Opus 5.5 (high) █████░░░░░ 46% $1.24 5h:23% ↻2h14m 7d:41% ↻3d4h
+Opus 5.5 (high) █████░░░░░ 46% $1.24 Max 5x 5h:23% ↻2h14m 7d:41% ↻3d4h
 ~/source/repos/my-app (master*+ ↑2)
 ```
 
@@ -16,6 +16,7 @@ Opus 5.5 (high) █████░░░░░ 46% $1.24 5h:23% ↻2h14m 7d:41% 
 - The output style, only when it isn't `default`.
 - Context window usage as a 10-cell bar and a percentage: green up to 40%, amber above 40%, red above 90%.
 - The session cost in USD, rounded to cents half away from zero on the amount Claude Code reports, so `0.145` shows as `$0.15`. Rounding the binary floating-point value instead, as most formatters do, would show `$0.14`.
+- Your Claude subscription plan, such as `Pro` or `Max 5x`. Claude Code doesn't send the plan to status lines, so it's read from the account details Claude Code keeps in `~/.claude.json` (or `$CLAUDE_CONFIG_DIR/.claude.json`). That file isn't a documented interface, so if a Claude Code update changes it, the plan is left out until this tool catches up. Signed in with an API key, there's no plan to show.
 - Claude.ai subscription rate limits for the 5-hour and 7-day windows, red above 90%, each followed by the time left until the window resets (`↻2h14m` or `↻3d4h`, rounded up so it never under-reports). The countdown only moves when Claude Code re-runs the status line, which it does on activity but not while the session sits idle. To keep it current while idle, add `"refreshInterval": 60` to the `statusLine` setting.
 
 **Second line**
@@ -74,6 +75,7 @@ To leave segments out, pass `--hide` with a comma-separated list in the `command
 | `style` | The output style |
 | `context` | The context usage bar and percentage |
 | `cost` | The session cost, which Pro and Max subscribers may not need |
+| `plan` | The subscription plan. It also skips reading `~/.claude.json` |
 | `limits` | The 5-hour and 7-day rate limits, with their countdowns |
 | `resets` | Only the rate-limit countdowns |
 | `dir` | The working directory |

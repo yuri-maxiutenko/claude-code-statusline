@@ -122,6 +122,7 @@ pub fn countdown(reset: f64, now: i64) -> Option<String> {
     })
 }
 
+/// `plan` is the subscription plan, which main reads from Claude Code's config.
 /// `now` is the current Unix time in seconds, for the rate-limit countdowns.
 /// Segments in `hidden` are left out, and the second line too when both `dir`
 /// and `git` are hidden, so its height doesn't depend on being in a repo.
@@ -130,6 +131,7 @@ pub fn render(
     home: &str,
     windows: bool,
     branch: &str,
+    plan: Option<&str>,
     now: i64,
     hidden: &Hidden,
 ) -> String {
@@ -196,6 +198,13 @@ pub fn render(
         parts.push(paint(32, &format!("${}", money(cost))));
     }
 
+    // Subscription plan, ahead of the limits it sets
+    if !hidden.plan
+        && let Some(plan) = plan
+    {
+        parts.push(paint(36, plan));
+    }
+
     // Claude.ai subscription rate limits (5h / 7d), white until they pass 90%,
     // each followed by the time left until its window resets
     for (name, window) in [
@@ -257,7 +266,7 @@ mod tests {
     }
 
     fn first_line(json: &str) -> String {
-        let out = render(&input(json), HOME, true, "", NOW, &Hidden::default());
+        let out = render(&input(json), HOME, true, "", None, NOW, &Hidden::default());
         plain(out.split('\n').next().unwrap())
     }
 
@@ -285,7 +294,7 @@ mod tests {
             "\x1b[33mOpus 5.5 (high)\x1b[0m ",
             "\x1b[33m\u{2588}\u{2588}\u{2588}\u{2588}\u{2588}\x1b[0m",
             "\x1b[90m\u{2591}\u{2591}\u{2591}\u{2591}\u{2591}\x1b[0m \x1b[33m46%\x1b[0m ",
-            "\x1b[32m$1.24\x1b[0m \x1b[31m5h:92%\x1b[0m \x1b[90m\u{21bb}2h14m\x1b[0m ",
+            "\x1b[32m$1.24\x1b[0m \x1b[36mMax 5x\x1b[0m \x1b[31m5h:92%\x1b[0m \x1b[90m\u{21bb}2h14m\x1b[0m ",
             "\x1b[37m7d:30%\x1b[0m \x1b[90m\u{21bb}3d4h\x1b[0m\n",
             "\x1b[34m~\\src\\app\x1b[0m \x1b[32m(master*+ \u{2191}2)\x1b[0m",
         );
@@ -295,6 +304,7 @@ mod tests {
                 HOME,
                 true,
                 "master*+ \u{2191}2",
+                Some("Max 5x"),
                 NOW,
                 &Hidden::default()
             ),
@@ -315,13 +325,21 @@ mod tests {
             "rate_limits": {"five_hour": {"used_percentage": 10, "resets_at": 1738400600}}
         }"#;
         let show = |hidden: Hidden, branch: &str| {
-            plain(&render(&input(json), HOME, false, branch, NOW, &hidden))
+            plain(&render(
+                &input(json),
+                HOME,
+                false,
+                branch,
+                Some("Pro"),
+                NOW,
+                &hidden,
+            ))
         };
         let bar = "\u{2588}".repeat(5) + &"\u{2591}".repeat(5) + " 50%";
 
         assert_eq!(
             show(Hidden::default(), "main"),
-            format!("Opus (high, fast) Explanatory {bar} $1.00 5h:10% \u{21bb}10m\n/w (main)")
+            format!("Opus (high, fast) Explanatory {bar} $1.00 Pro 5h:10% \u{21bb}10m\n/w (main)")
         );
         let none = Hidden {
             effort: true,
@@ -329,6 +347,7 @@ mod tests {
             style: true,
             context: true,
             cost: true,
+            plan: true,
             resets: true,
             ..Hidden::default()
         };
@@ -341,7 +360,7 @@ mod tests {
         };
         assert_eq!(
             show(first, "main"),
-            format!("Opus (fast) Explanatory {bar} $1.00\n(main)")
+            format!("Opus (fast) Explanatory {bar} $1.00 Pro\n(main)")
         );
         // Hiding only dir keeps the second line, even outside a repo
         let dir = || Hidden {
@@ -377,7 +396,7 @@ mod tests {
     fn bar_color_follows_thresholds() {
         let color = |pct: f64| {
             let json = format!(r#"{{"context_window":{{"used_percentage":{pct}}}}}"#);
-            render(&input(&json), HOME, true, "", NOW, &Hidden::default())[..5].to_string()
+            render(&input(&json), HOME, true, "", None, NOW, &Hidden::default())[..5].to_string()
         };
         assert_eq!(color(40.0), "\x1b[32m");
         assert_eq!(color(41.0), "\x1b[33m");
@@ -389,7 +408,7 @@ mod tests {
     fn invalid_or_empty_input_renders_empty_lines() {
         for raw in ["", "null", "42", "not json", "[1,2]"] {
             assert_eq!(
-                render(&input(raw), HOME, true, "", NOW, &Hidden::default()),
+                render(&input(raw), HOME, true, "", None, NOW, &Hidden::default()),
                 "\n\x1b[34m\x1b[0m",
                 "input {raw:?}"
             );
@@ -456,6 +475,7 @@ mod tests {
             HOME,
             true,
             "",
+            None,
             NOW,
             &Hidden::default(),
         );
@@ -584,7 +604,15 @@ mod tests {
             "\x1b[34m/w/x]8;;http://ey\x1b[0m \x1b[32m(main)\x1b[0m",
         );
         assert_eq!(
-            render(&input(json), HOME, false, "ma\nin", NOW, &Hidden::default()),
+            render(
+                &input(json),
+                HOME,
+                false,
+                "ma\nin",
+                None,
+                NOW,
+                &Hidden::default()
+            ),
             expected
         );
     }
