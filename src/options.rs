@@ -7,12 +7,17 @@ use std::ffi::OsString;
 type Segment = (&'static str, &'static str, fn(&mut Hidden) -> &mut bool);
 
 /// Every segment, in display order. This is the one list to extend.
-const SEGMENTS: [Segment; 9] = [
+const SEGMENTS: [Segment; 10] = [
     ("effort", "the effort level", |h| &mut h.effort),
     ("fast", "the fast mode tag", |h| &mut h.fast),
     ("style", "the output style", |h| &mut h.style),
     ("context", "the context usage bar", |h| &mut h.context),
     ("cost", "the session cost", |h| &mut h.cost),
+    (
+        "plan",
+        "the subscription plan, and skips reading Claude Code's config",
+        |h| &mut h.plan,
+    ),
     (
         "limits",
         "the 5h / 7d rate limits, with their countdowns",
@@ -35,6 +40,7 @@ pub struct Hidden {
     pub style: bool,
     pub context: bool,
     pub cost: bool,
+    pub plan: bool,
     /// The 5h / 7d percentages, and their countdowns with them
     pub limits: bool,
     pub resets: bool,
@@ -179,6 +185,7 @@ mod tests {
                 style: true,
                 context: true,
                 cost: true,
+                plan: true,
                 limits: true,
                 resets: true,
                 dir: true,
