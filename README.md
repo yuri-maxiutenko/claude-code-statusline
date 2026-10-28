@@ -59,6 +59,28 @@ On macOS, a binary downloaded through a browser is quarantined. Clear the flag o
 
 `claude-code-statusline --version` prints the release version.
 
+## Options
+
+To leave segments out, pass `--hide` with a comma-separated list in the `command`:
+
+```jsonc
+"command": "~/.claude/bin/claude-code-statusline --hide cost,resets"
+```
+
+| Segment | What it hides |
+|---|---|
+| `effort` | The effort level in the model's parentheses |
+| `fast` | The `fast` tag in the model's parentheses |
+| `style` | The output style |
+| `context` | The context usage bar and percentage |
+| `cost` | The session cost, which Pro and Max subscribers may not need |
+| `limits` | The 5-hour and 7-day rate limits, with their countdowns |
+| `resets` | Only the rate-limit countdowns |
+| `dir` | The working directory |
+| `git` | The git branch. It also skips running `git` entirely, which helps on slow drives |
+
+The model name is always shown. Hiding both `dir` and `git` drops the second line. An unknown segment name is ignored with a warning on stderr, so a typo never blanks the status line. `claude-code-statusline --help` lists the segment names.
+
 ## Build from source
 
 ```sh
