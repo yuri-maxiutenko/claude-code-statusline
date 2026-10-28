@@ -7,6 +7,9 @@ and this project uses [Calendar Versioning](https://calver.org/) (`YYYY.MM.DD`, 
 
 ## [Unreleased]
 
+### Added
+- `fast` after the effort level when fast mode is on, such as `Opus 5.5 (high, fast)`.
+
 ## [2026.10.28]
 
 ### Added
