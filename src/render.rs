@@ -122,19 +122,32 @@ pub fn countdown(reset: f64, now: i64) -> Option<String> {
     })
 }
 
-/// `plan` is the subscription plan, which main reads from Claude Code's config.
-/// `now` is the current Unix time in seconds, for the rate-limit countdowns.
-/// Segments in `hidden` are left out, and the second line too when both `dir`
-/// and `git` are hidden, so its height doesn't depend on being in a repo.
-pub fn render(
-    input: &Value,
-    home: &str,
-    windows: bool,
-    branch: &str,
-    plan: Option<&str>,
-    now: i64,
-    hidden: &Hidden,
-) -> String {
+/// What `render` needs besides the session JSON, gathered by main.
+pub struct Env<'a> {
+    /// Shortened to `~` at the start of the directory
+    pub home: &'a str,
+    /// Paths compare case-insensitively, as on Windows
+    pub windows: bool,
+    /// As `git::parse_status` formats it, or empty outside a repo
+    pub branch: &'a str,
+    /// The subscription plan, from Claude Code's config
+    pub plan: Option<&'a str>,
+    /// Current Unix time in seconds, for the rate-limit countdowns
+    pub now: i64,
+    pub hidden: Hidden,
+}
+
+/// Segments in `env.hidden` are left out, and the second line too when both
+/// `dir` and `git` are hidden, so its height doesn't depend on being in a repo.
+pub fn render(input: &Value, env: &Env) -> String {
+    let Env {
+        home,
+        windows,
+        branch,
+        plan,
+        now,
+        hidden,
+    } = *env;
     let mut parts = Vec::new();
 
     // Model, with the effort level and fast mode in parentheses
@@ -247,6 +260,18 @@ mod tests {
     const HOME: &str = r"C:\Users\alex";
     const NOW: i64 = 1_738_400_000;
 
+    /// The environment most tests render in: Windows paths, no branch or plan.
+    fn env() -> Env<'static> {
+        Env {
+            home: HOME,
+            windows: true,
+            branch: "",
+            plan: None,
+            now: NOW,
+            hidden: Hidden::default(),
+        }
+    }
+
     fn input(json: &str) -> Value {
         parse_input(json.as_bytes())
     }
@@ -266,7 +291,7 @@ mod tests {
     }
 
     fn first_line(json: &str) -> String {
-        let out = render(&input(json), HOME, true, "", None, NOW, &Hidden::default());
+        let out = render(&input(json), &env());
         plain(out.split('\n').next().unwrap())
     }
 
@@ -301,12 +326,11 @@ mod tests {
         assert_eq!(
             render(
                 &input(json),
-                HOME,
-                true,
-                "master*+ \u{2191}2",
-                Some("Max 5x"),
-                NOW,
-                &Hidden::default()
+                &Env {
+                    branch: "master*+ \u{2191}2",
+                    plan: Some("Max 5x"),
+                    ..env()
+                }
             ),
             expected
         );
@@ -327,12 +351,13 @@ mod tests {
         let show = |hidden: Hidden, branch: &str| {
             plain(&render(
                 &input(json),
-                HOME,
-                false,
-                branch,
-                Some("Pro"),
-                NOW,
-                &hidden,
+                &Env {
+                    windows: false,
+                    branch,
+                    plan: Some("Pro"),
+                    hidden,
+                    ..env()
+                },
             ))
         };
         let bar = "\u{2588}".repeat(5) + &"\u{2591}".repeat(5) + " 50%";
@@ -396,7 +421,7 @@ mod tests {
     fn bar_color_follows_thresholds() {
         let color = |pct: f64| {
             let json = format!(r#"{{"context_window":{{"used_percentage":{pct}}}}}"#);
-            render(&input(&json), HOME, true, "", None, NOW, &Hidden::default())[..5].to_string()
+            render(&input(&json), &env())[..5].to_string()
         };
         assert_eq!(color(40.0), "\x1b[32m");
         assert_eq!(color(41.0), "\x1b[33m");
@@ -408,7 +433,7 @@ mod tests {
     fn invalid_or_empty_input_renders_empty_lines() {
         for raw in ["", "null", "42", "not json", "[1,2]"] {
             assert_eq!(
-                render(&input(raw), HOME, true, "", None, NOW, &Hidden::default()),
+                render(&input(raw), &env()),
                 "\n\x1b[34m\x1b[0m",
                 "input {raw:?}"
             );
@@ -470,15 +495,7 @@ mod tests {
 
     #[test]
     fn cwd_falls_back_to_top_level_field() {
-        let out = render(
-            &input(r#"{"cwd":"D:\\work"}"#),
-            HOME,
-            true,
-            "",
-            None,
-            NOW,
-            &Hidden::default(),
-        );
+        let out = render(&input(r#"{"cwd":"D:\\work"}"#), &env());
         assert_eq!(plain(&out), "\nD:\\work");
     }
 
@@ -606,12 +623,11 @@ mod tests {
         assert_eq!(
             render(
                 &input(json),
-                HOME,
-                false,
-                "ma\nin",
-                None,
-                NOW,
-                &Hidden::default()
+                &Env {
+                    windows: false,
+                    branch: "ma\nin",
+                    ..env()
+                }
             ),
             expected
         );
