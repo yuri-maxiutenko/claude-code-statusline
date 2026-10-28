@@ -39,14 +39,13 @@ fn main() {
         git::branch(cwd)
     };
 
-    let windows = cfg!(windows);
     // USERPROFILE / HOME, falling back to the profile folder / passwd entry
     let home = std::env::home_dir()
         .map(|path| path.to_string_lossy().into_owned())
         .unwrap_or_default();
 
     // The plan isn't in the session JSON, so it comes from Claude Code's config
-    let plan = if hidden.plan {
+    let plan = if hidden.plan || plan::on_cloud_provider(|name| std::env::var_os(name)) {
         None
     } else {
         plan::config_path(std::env::var_os("CLAUDE_CONFIG_DIR"), &home)
@@ -58,15 +57,15 @@ fn main() {
         .duration_since(UNIX_EPOCH)
         .map_or(0, |elapsed| elapsed.as_secs() as i64);
 
-    let out = render::render(
-        &input,
-        &home,
-        windows,
-        &branch,
-        plan.as_deref(),
+    let env = render::Env {
+        home: &home,
+        windows: cfg!(windows),
+        branch: &branch,
+        plan: plan.as_deref(),
         now,
-        &hidden,
-    );
+        hidden,
+    };
+    let out = render::render(&input, &env);
     let mut stdout = std::io::stdout().lock();
     let _ = stdout.write_all(out.as_bytes());
     let _ = stdout.flush();

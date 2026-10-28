@@ -4,7 +4,7 @@
 //! profile Claude Code keeps in `.claude.json`. That file isn't a documented
 //! interface: if its keys move, the plan is just left out.
 
-use std::ffi::OsString;
+use std::ffi::{OsStr, OsString};
 use std::path::{Path, PathBuf};
 
 use serde::Deserialize;
@@ -22,6 +22,32 @@ struct Config {
 struct Account {
     organization_type: Option<String>,
     organization_rate_limit_tier: Option<String>,
+}
+
+/// Variables that put Claude Code on a cloud provider. Those sessions bill per
+/// token whatever account is signed in, so a leftover `oauthAccount` would show
+/// a plan that doesn't apply. `ANTHROPIC_API_KEY` isn't one of them: it's often
+/// exported for other tools and declined in Claude Code.
+const PROVIDER_VARS: [&str; 3] = [
+    "CLAUDE_CODE_USE_BEDROCK",
+    "CLAUDE_CODE_USE_VERTEX",
+    "CLAUDE_CODE_USE_FOUNDRY",
+];
+
+/// Whether the session runs on a cloud provider rather than a Claude
+/// subscription, given how to look up an environment variable.
+pub fn on_cloud_provider(var: impl Fn(&str) -> Option<OsString>) -> bool {
+    PROVIDER_VARS
+        .iter()
+        .any(|name| var(name).is_some_and(|value| truthy(&value)))
+}
+
+/// `1`, `true`, `yes` or `on`, ignoring case and surrounding whitespace.
+fn truthy(value: &OsStr) -> bool {
+    let value = value.to_string_lossy();
+    ["1", "true", "yes", "on"]
+        .iter()
+        .any(|yes| value.trim().eq_ignore_ascii_case(yes))
 }
 
 /// `.claude.json` in `CLAUDE_CONFIG_DIR` when it's set, otherwise in `home`.
@@ -47,8 +73,9 @@ fn parse(raw: &[u8]) -> Option<String> {
     )
 }
 
-/// `claude_pro` -> `Pro`; `claude_max` with tier `default_claude_max_5x` ->
-/// `Max 5x`. Types are mapped generically so a new plan still gets a name.
+/// `claude_pro` -> `Pro`, `claude_max` -> `Max`. Types are mapped
+/// generically so a new plan still gets a name. A usage multiplier ending the
+/// tier is appended whatever the type: `default_claude_max_5x` -> `Max 5x`.
 fn label(kind: &str, tier: Option<&str>) -> Option<String> {
     let words: Vec<String> = kind
         .strip_prefix("claude_")?
@@ -102,7 +129,7 @@ mod tests {
     }
 
     #[test]
-    fn max_shows_its_multiplier() {
+    fn tier_multiplier_is_appended() {
         let max = |tier| label("claude_max", tier);
         assert_eq!(
             max(Some("default_claude_max_5x")).as_deref(),
@@ -115,6 +142,24 @@ mod tests {
         assert_eq!(max(Some("default_claude_max")).as_deref(), Some("Max"));
         assert_eq!(max(Some("x")).as_deref(), Some("Max"));
         assert_eq!(max(None).as_deref(), Some("Max"));
+        assert_eq!(
+            label("claude_team", Some("team_5x")).as_deref(),
+            Some("Team 5x")
+        );
+    }
+
+    #[test]
+    fn cloud_providers_hide_the_plan() {
+        let only = |name: &'static str, value: &'static str| {
+            move |var: &str| (var == name).then(|| OsString::from(value))
+        };
+        assert!(on_cloud_provider(only("CLAUDE_CODE_USE_BEDROCK", "1")));
+        assert!(on_cloud_provider(only("CLAUDE_CODE_USE_VERTEX", "true")));
+        assert!(on_cloud_provider(only("CLAUDE_CODE_USE_FOUNDRY", " Yes ")));
+        assert!(!on_cloud_provider(only("CLAUDE_CODE_USE_BEDROCK", "0")));
+        assert!(!on_cloud_provider(only("CLAUDE_CODE_USE_BEDROCK", "")));
+        assert!(!on_cloud_provider(only("ANTHROPIC_API_KEY", "sk-test")));
+        assert!(!on_cloud_provider(|_| None));
     }
 
     #[test]

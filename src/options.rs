@@ -33,7 +33,7 @@ const SEGMENTS: [Segment; 10] = [
 ];
 
 /// Which segments to leave out; everything is shown by default.
-#[derive(Debug, Default, PartialEq)]
+#[derive(Debug, Default, PartialEq, Clone, Copy)]
 pub struct Hidden {
     pub effort: bool,
     pub fast: bool,
