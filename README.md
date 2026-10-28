@@ -12,7 +12,7 @@ Opus 5.5 (high) █████░░░░░ 46% $1.24 5h:23% ↻2h14m 7d:41% 
 ## What it shows
 
 **First line**
-- The model, with the effort level in parentheses, plus `fast` when fast mode is on: `Opus 5.5 (high, fast)`.
+- The model, with the effort level in parentheses, plus `fast` when fast mode is on: `Opus 5.5 (high, fast)`, or `Opus 5.5 (fast)` when there's no effort level.
 - The output style, only when it isn't `default`.
 - Context window usage as a 10-cell bar and a percentage: green up to 40%, amber above 40%, red above 90%.
 - The session cost in USD, rounded to cents half away from zero on the amount Claude Code reports, so `0.145` shows as `$0.15`. Rounding the binary floating-point value instead, as most formatters do, would show `$0.14`.
