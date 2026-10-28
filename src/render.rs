@@ -2,6 +2,8 @@
 
 use serde_json::{Map, Value};
 
+use crate::options::Hidden;
+
 /// Parses stdin; anything that isn't a JSON object renders as empty input.
 pub fn parse_input(raw: &[u8]) -> Value {
     match serde_json::from_slice::<Value>(raw) {
@@ -121,12 +123,23 @@ pub fn countdown(reset: f64, now: i64) -> Option<String> {
 }
 
 /// `now` is the current Unix time in seconds, for the rate-limit countdowns.
-pub fn render(input: &Value, home: &str, windows: bool, branch: &str, now: i64) -> String {
+/// Segments in `hidden` are left out; the git branch is hidden by passing an
+/// empty `branch`.
+pub fn render(
+    input: &Value,
+    home: &str,
+    windows: bool,
+    branch: &str,
+    now: i64,
+    hidden: &Hidden,
+) -> String {
     let mut parts = Vec::new();
 
     // Model, with the effort level and fast mode in parentheses
     if let Some(model) = text(input, "/model/display_name") {
-        let label = match (text(input, "/effort/level"), flag(input, "/fast_mode")) {
+        let effort = text(input, "/effort/level").filter(|_| !hidden.effort);
+        let fast = flag(input, "/fast_mode") && !hidden.fast;
+        let label = match (effort, fast) {
             (Some(level), true) => format!("{model} ({level}, fast)"),
             (Some(level), false) => format!("{model} ({level})"),
             (None, true) => format!("{model} (fast)"),
@@ -136,12 +149,15 @@ pub fn render(input: &Value, home: &str, windows: bool, branch: &str, now: i64) 
     }
 
     // Output style (only shown when not the default)
-    if let Some(style) = text(input, "/output_style/name").filter(|s| *s != "default") {
+    if let Some(style) =
+        text(input, "/output_style/name").filter(|s| *s != "default" && !hidden.style)
+    {
         parts.push(paint(37, style));
     }
 
     // Context usage, drawn as a bar with the consumed share filled in
-    if let Some(used) = number(input, "/context_window/used_percentage") {
+    if let Some(used) = number(input, "/context_window/used_percentage").filter(|_| !hidden.context)
+    {
         const WIDTH: i64 = 10;
         let pct = used.round() as i64;
         let filled = pct
@@ -169,7 +185,7 @@ pub fn render(input: &Value, home: &str, windows: bool, branch: &str, now: i64) 
     }
 
     // Session cost, when Claude Code reports one
-    if let Some(cost) = number(input, "/cost/total_cost_usd") {
+    if let Some(cost) = number(input, "/cost/total_cost_usd").filter(|_| !hidden.cost) {
         parts.push(paint(32, &format!("${}", money(cost))));
     }
 
@@ -179,10 +195,13 @@ pub fn render(input: &Value, home: &str, windows: bool, branch: &str, now: i64) 
         ("5h", "/rate_limits/five_hour"),
         ("7d", "/rate_limits/seven_day"),
     ] {
-        if let Some(used) = number(input, &format!("{window}/used_percentage")) {
+        if let Some(used) =
+            number(input, &format!("{window}/used_percentage")).filter(|_| !hidden.limits)
+        {
             let n = used.round() as i64;
             parts.push(paint(if n > 90 { 31 } else { 37 }, &format!("{name}:{n}%")));
             if let Some(left) = number(input, &format!("{window}/resets_at"))
+                .filter(|_| !hidden.resets)
                 .and_then(|reset| countdown(reset, now))
             {
                 parts.push(paint(90, &format!("\u{21bb}{left}")));
@@ -190,13 +209,20 @@ pub fn render(input: &Value, home: &str, windows: bool, branch: &str, now: i64) 
         }
     }
 
-    // Second line: directory and git branch
-    let mut repo = vec![paint(34, &shorten_home(cwd(input), home, windows))];
+    // Second line: directory and git branch, left out when both are hidden
+    let mut repo = Vec::new();
+    if !hidden.dir {
+        repo.push(paint(34, &shorten_home(cwd(input), home, windows)));
+    }
     if !branch.is_empty() {
         repo.push(paint(32, &format!("({branch})")));
     }
 
-    format!("{}\n{}", parts.join(" "), repo.join(" "))
+    if repo.is_empty() {
+        parts.join(" ")
+    } else {
+        format!("{}\n{}", parts.join(" "), repo.join(" "))
+    }
 }
 
 #[cfg(test)]
@@ -225,7 +251,7 @@ mod tests {
     }
 
     fn first_line(json: &str) -> String {
-        let out = render(&input(json), HOME, true, "", NOW);
+        let out = render(&input(json), HOME, true, "", NOW, &Hidden::default());
         plain(out.split('\n').next().unwrap())
     }
 
@@ -258,9 +284,66 @@ mod tests {
             "\x1b[34m~\\src\\app\x1b[0m \x1b[32m(master*+ \u{2191}2)\x1b[0m",
         );
         assert_eq!(
-            render(&input(json), HOME, true, "master*+ \u{2191}2", NOW),
+            render(
+                &input(json),
+                HOME,
+                true,
+                "master*+ \u{2191}2",
+                NOW,
+                &Hidden::default()
+            ),
             expected
         );
+    }
+
+    #[test]
+    fn hidden_segments_are_left_out() {
+        let json = r#"{
+            "model": {"display_name": "Opus"},
+            "effort": {"level": "high"},
+            "fast_mode": true,
+            "output_style": {"name": "Explanatory"},
+            "workspace": {"current_dir": "/w"},
+            "context_window": {"used_percentage": 50},
+            "cost": {"total_cost_usd": 1},
+            "rate_limits": {"five_hour": {"used_percentage": 10, "resets_at": 1738400600}}
+        }"#;
+        let show = |hidden: Hidden, branch: &str| {
+            plain(&render(&input(json), HOME, false, branch, NOW, &hidden))
+        };
+        let bar = "\u{2588}".repeat(5) + &"\u{2591}".repeat(5) + " 50%";
+
+        assert_eq!(
+            show(Hidden::default(), "main"),
+            format!("Opus (high, fast) Explanatory {bar} $1.00 5h:10% \u{21bb}10m\n/w (main)")
+        );
+        let none = Hidden {
+            effort: true,
+            fast: true,
+            style: true,
+            context: true,
+            cost: true,
+            resets: true,
+            ..Hidden::default()
+        };
+        assert_eq!(show(none, "main"), "Opus 5h:10%\n/w (main)");
+        let first = Hidden {
+            effort: true,
+            limits: true,
+            dir: true,
+            ..Hidden::default()
+        };
+        assert_eq!(
+            show(first, "main"),
+            format!("Opus (fast) Explanatory {bar} $1.00\n(main)")
+        );
+        let no_repo = Hidden {
+            dir: true,
+            git: true,
+            ..Hidden::default()
+        };
+        // main passes an empty branch when git is hidden
+        assert!(!show(no_repo, "").contains('\n'));
     }
 
     #[test]
@@ -283,7 +366,7 @@ mod tests {
     fn bar_color_follows_thresholds() {
         let color = |pct: f64| {
             let json = format!(r#"{{"context_window":{{"used_percentage":{pct}}}}}"#);
-            render(&input(&json), HOME, true, "", NOW)[..5].to_string()
+            render(&input(&json), HOME, true, "", NOW, &Hidden::default())[..5].to_string()
         };
         assert_eq!(color(40.0), "\x1b[32m");
         assert_eq!(color(41.0), "\x1b[33m");
@@ -295,7 +378,7 @@ mod tests {
     fn invalid_or_empty_input_renders_empty_lines() {
         for raw in ["", "null", "42", "not json", "[1,2]"] {
             assert_eq!(
-                render(&input(raw), HOME, true, "", NOW),
+                render(&input(raw), HOME, true, "", NOW, &Hidden::default()),
                 "\n\x1b[34m\x1b[0m",
                 "input {raw:?}"
             );
@@ -357,7 +440,14 @@ mod tests {
 
     #[test]
     fn cwd_falls_back_to_top_level_field() {
-        let out = render(&input(r#"{"cwd":"D:\\work"}"#), HOME, true, "", NOW);
+        let out = render(
+            &input(r#"{"cwd":"D:\\work"}"#),
+            HOME,
+            true,
+            "",
+            NOW,
+            &Hidden::default(),
+        );
         assert_eq!(plain(&out), "\nD:\\work");
     }
 
@@ -482,6 +572,9 @@ mod tests {
             "\x1b[33mOpus[2J (high)\x1b[0m \x1b[37mExplain\x1b[0m\n",
             "\x1b[34m/w/x]8;;http://ey\x1b[0m \x1b[32m(main)\x1b[0m",
         );
-        assert_eq!(render(&input(json), HOME, false, "ma\nin", NOW), expected);
+        assert_eq!(
+            render(&input(json), HOME, false, "ma\nin", NOW, &Hidden::default()),
+            expected
+        );
     }
 }

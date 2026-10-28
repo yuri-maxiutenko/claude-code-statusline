@@ -9,6 +9,7 @@ and this project uses [Calendar Versioning](https://calver.org/) (`YYYY.MM.DD`, 
 
 ### Added
 - `fast` in the model's parentheses when fast mode is on: `Opus 5.5 (high, fast)`, or `Opus 5.5 (fast)` when there's no effort level.
+- A `--hide` option to leave out segments, such as `--hide cost,resets`. Hiding `git` also skips the `git` call. Unknown names are ignored with a warning on stderr, and `--help` lists the segment names.
 
 ## [2026.10.28]
 

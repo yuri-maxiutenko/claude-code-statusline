@@ -1,27 +1,38 @@
 //! Status line for Claude Code. Reads the session JSON on stdin, prints two lines.
 
 mod git;
+mod options;
 mod render;
 
+use options::Command;
 use std::io::{Read, Write};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 fn main() {
     // args_os: args() panics on a non-Unicode argument, including argv[0]
-    if std::env::args_os()
-        .nth(1)
-        .is_some_and(|arg| arg == "--version")
-    {
-        println!("{}", option_env!("STATUSLINE_VERSION").unwrap_or("dev"));
-        return;
-    }
+    let hidden = match options::parse(std::env::args_os().skip(1)) {
+        Command::Version => {
+            println!("{}", option_env!("STATUSLINE_VERSION").unwrap_or("dev"));
+            return;
+        }
+        Command::Help => {
+            print!("{}", options::help());
+            return;
+        }
+        Command::Run { hidden, warnings } => {
+            for warning in warnings {
+                eprintln!("claude-code-statusline: {warning}");
+            }
+            hidden
+        }
+    };
 
     let mut raw = Vec::new();
     let _ = std::io::stdin().read_to_end(&mut raw);
     let input = render::parse_input(&raw);
 
     let cwd = render::cwd(&input);
-    let branch = if cwd.is_empty() {
+    let branch = if cwd.is_empty() || hidden.git {
         String::new()
     } else {
         git::branch(cwd)
@@ -38,7 +49,7 @@ fn main() {
         .duration_since(UNIX_EPOCH)
         .map_or(0, |elapsed| elapsed.as_secs() as i64);
 
-    let out = render::render(&input, &home, windows, &branch, now);
+    let out = render::render(&input, &home, windows, &branch, now, &hidden);
     let mut stdout = std::io::stdout().lock();
     let _ = stdout.write_all(out.as_bytes());
     let _ = stdout.flush();
