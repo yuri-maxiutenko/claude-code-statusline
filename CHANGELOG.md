@@ -7,6 +7,8 @@ and this project uses [Calendar Versioning](https://calver.org/) (`YYYY.MM.DD`, 
 
 ## [Unreleased]
 
+## [2026.10.28.2]
+
 ### Added
 - Your Claude subscription plan, such as `Max 5x`, before the rate limits. It's read from the account details in `~/.claude.json` (or `$CLAUDE_CONFIG_DIR/.claude.json`), since Claude Code doesn't send the plan to status lines. It's left out on Bedrock, Vertex and Foundry, and `--hide plan` turns it off and skips reading the file.
 - `fast` in the model's parentheses when fast mode is on: `Opus 5.5 (high, fast)`, or `Opus 5.5 (fast)` when there's no effort level.
