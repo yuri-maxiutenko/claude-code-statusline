@@ -33,7 +33,10 @@ pub fn cwd(input: &Value) -> &str {
         .unwrap_or("")
 }
 
+/// Colors `text`, dropping control characters first so a field such as a
+/// directory name can't smuggle escape sequences into the terminal.
 fn paint(code: u8, text: &str) -> String {
+    let text: String = text.chars().filter(|c| !c.is_control()).collect();
     format!("\x1b[{code}m{text}\x1b[0m")
 }
 
@@ -366,5 +369,20 @@ mod tests {
     #[test]
     fn cost_is_shown_with_decimal_rounding() {
         assert_eq!(first_line(r#"{"cost":{"total_cost_usd":0.145}}"#), "$0.15");
+    }
+
+    #[test]
+    fn control_characters_are_dropped_from_text_fields() {
+        let json = r#"{
+            "model": {"display_name": "Opus\u001b[2J"},
+            "effort": {"level": "hi\u0007gh"},
+            "output_style": {"name": "Ex\u009bplain"},
+            "workspace": {"current_dir": "/w/x\u001b]8;;http://e\u0007y"}
+        }"#;
+        let expected = concat!(
+            "\x1b[33mOpus[2J (high)\x1b[0m \x1b[37mExplain\x1b[0m\n",
+            "\x1b[34m/w/x]8;;http://ey\x1b[0m \x1b[32m(main)\x1b[0m",
+        );
+        assert_eq!(render(&input(json), HOME, false, "ma\nin"), expected);
     }
 }
