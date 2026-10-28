@@ -19,7 +19,7 @@ echo '{"model":{"display_name":"Opus"}}' | cargo run -q   # try it by hand
 ## Layout
 
 - `src/main.rs`: entry point. Reads stdin, calls git and render, writes stdout with no trailing newline. `--version` prints `STATUSLINE_VERSION` from build time (`dev` locally).
-- `src/render.rs`: pure formatting (`parse_input`, `cwd`, `shorten_home`, `money`, `render`). Fields are read with `Value::pointer`; missing, null and non-numeric values are skipped, and non-object input renders as empty. `money` rounds the cost on its shortest decimal form (what Claude Code sent), half away from zero, never on the f64 itself. Don't replace it with `{:.2}`, which rounds `0.145` down to `0.14`. `pull_request` renders Claude Code's `pr` object (number, URL, review state, GitLab `kind`) as an OSC 8 link terminated with BEL, the form Claude Code's docs use.
+- `src/render.rs`: pure formatting (`parse_input`, `cwd`, `shorten_home`, `money`, `render`). Fields are read with `Value::pointer`; missing, null and non-numeric values are skipped, and non-object input renders as empty. `money` rounds the cost on its shortest decimal form (what Claude Code sent), half away from zero, never on the f64 itself. Don't replace it with `{:.2}`, which rounds `0.145` down to `0.14`.
 - `src/git.rs`: one `git status --porcelain=v2 --branch --untracked-files=no` call with a 2 s timeout, and the pure `parse_status`.
 - `docs/sample.svg`: the README's colored preview. Update it if the output format changes.
 

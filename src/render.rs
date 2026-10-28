@@ -153,48 +153,13 @@ pub fn render(input: &Value, home: &str, windows: bool, branch: &str) -> String 
         }
     }
 
-    // Second line: directory, git branch and the branch's open PR
+    // Second line: directory and git branch
     let mut repo = vec![paint(34, &shorten_home(cwd(input), home, windows))];
-    match (branch.is_empty(), pull_request(input)) {
-        (true, None) => {}
-        (false, None) => repo.push(paint(32, &format!("({branch})"))),
-        (true, Some(pr)) => repo.push(format!("{}{pr}{}", paint(32, "("), paint(32, ")"))),
-        (false, Some(pr)) => repo.push(format!(
-            "{}{pr}{}",
-            paint(32, &format!("({branch} ")),
-            paint(32, ")")
-        )),
+    if !branch.is_empty() {
+        repo.push(paint(32, &format!("({branch})")));
     }
 
     format!("{}\n{}", parts.join(" "), repo.join(" "))
-}
-
-/// The branch's open PR as `#12` (`!12` for a GitLab merge request), colored
-/// by review state and linked to the PR when Claude Code sends its URL.
-fn pull_request(input: &Value) -> Option<String> {
-    let number = input.pointer("/pr/number").and_then(Value::as_u64)?;
-    let prefix = if text(input, "/pr/kind") == Some("mr") {
-        '!'
-    } else {
-        '#'
-    };
-
-    // Green when approved, red when changes are requested, gray for a draft,
-    // white while pending or unknown
-    let color = match text(input, "/pr/review_state") {
-        Some("approved") => 32,
-        Some("changes_requested") => 31,
-        Some("draft") => 90,
-        _ => 37,
-    };
-    let label = paint(color, &format!("{prefix}{number}"));
-
-    // OSC 8 hyperlink. A URL with control characters could smuggle in escape
-    // sequences, so it's shown unlinked.
-    match text(input, "/pr/url").filter(|url| !url.chars().any(char::is_control)) {
-        Some(url) => Some(format!("\x1b]8;;{url}\x07{label}\x1b]8;;\x07")),
-        None => Some(label),
-    }
 }
 
 #[cfg(test)]
@@ -396,74 +361,6 @@ mod tests {
         assert_eq!(money(-0.0), "0.00");
         assert_eq!(money(-0.001), "0.00");
         assert_eq!(money(-0.145), "-0.15");
-    }
-
-    fn second_line(json: &str, branch: &str) -> String {
-        let out = render(&input(json), HOME, true, branch);
-        out.split('\n').nth(1).unwrap().to_string()
-    }
-
-    const PR_URL: &str = "https://github.com/o/r/pull/3";
-
-    #[test]
-    fn pr_is_linked_and_colored_inside_the_branch_parentheses() {
-        let json = format!(
-            r#"{{"workspace":{{"current_dir":"D:\\w"}},"pr":{{"number":3,"url":"{PR_URL}","review_state":"approved"}}}}"#
-        );
-        let expected = format!(
-            "\x1b[34mD:\\w\x1b[0m \x1b[32m(fix/x* \x1b[0m\x1b]8;;{PR_URL}\x07\x1b[32m#3\x1b[0m\x1b]8;;\x07\x1b[32m)\x1b[0m"
-        );
-        assert_eq!(second_line(&json, "fix/x*"), expected);
-    }
-
-    #[test]
-    fn pr_color_follows_review_state() {
-        let color = |state: &str| {
-            let json = format!(r#"{{"pr":{{"number":3,"review_state":"{state}"}}}}"#);
-            let line = second_line(&json, "b");
-            line[line.find('#').unwrap() - 5..line.find('#').unwrap()].to_string()
-        };
-        assert_eq!(color("approved"), "\x1b[32m");
-        assert_eq!(color("changes_requested"), "\x1b[31m");
-        assert_eq!(color("draft"), "\x1b[90m");
-        assert_eq!(color("pending"), "\x1b[37m");
-        assert_eq!(color("something_new"), "\x1b[37m");
-    }
-
-    #[test]
-    fn pr_without_review_state_or_url_is_white_and_unlinked() {
-        let line = second_line(r#"{"pr":{"number":3}}"#, "b");
-        assert!(line.ends_with("\x1b[32m(b \x1b[0m\x1b[37m#3\x1b[0m\x1b[32m)\x1b[0m"));
-    }
-
-    #[test]
-    fn merge_request_uses_gitlab_prefix() {
-        let line = plain(&second_line(r#"{"pr":{"number":7,"kind":"mr"}}"#, "b"));
-        assert_eq!(line, " (b !7)");
-    }
-
-    #[test]
-    fn pr_shows_even_without_a_branch() {
-        let line = plain(&second_line(r#"{"pr":{"number":3}}"#, ""));
-        assert_eq!(line, " (#3)");
-    }
-
-    #[test]
-    fn pr_url_with_control_characters_is_not_linked() {
-        let line = second_line(r#"{"pr":{"number":3,"url":"https://x/\u001b[31m"}}"#, "b");
-        assert!(!line.contains("\x1b]8;;"));
-    }
-
-    #[test]
-    fn invalid_pr_number_shows_no_pr() {
-        for pr in [r#""3""#, "-3", "3.5", "null"] {
-            let json = format!(r#"{{"pr":{{"number":{pr}}}}}"#);
-            assert_eq!(
-                second_line(&json, "b"),
-                "\x1b[34m\x1b[0m \x1b[32m(b)\x1b[0m",
-                "number {pr}"
-            );
-        }
     }
 
     #[test]
