@@ -7,9 +7,6 @@ and this project uses [Calendar Versioning](https://calver.org/) (`YYYY.MM.DD`, 
 
 ## [Unreleased]
 
-### Added
-- The branch's open pull request number next to the branch, such as `(feat/login* #12)` (`!12` for a GitLab merge request). It's colored by review state and links to the PR in terminals that support OSC 8 hyperlinks.
-
 ### Fixed
 - The cost is rounded to cents on its decimal value, half away from zero, so `0.145` shows as `$0.15` and `0.125` as `$0.13` (both were rounded down before).
 - A file or branch name that isn't valid UTF-8 no longer hides the git branch.
