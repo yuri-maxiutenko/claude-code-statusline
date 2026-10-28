@@ -12,6 +12,7 @@ and this project uses [Calendar Versioning](https://calver.org/) (`YYYY.MM.DD`, 
 - A file or branch name that isn't valid UTF-8 no longer hides the git branch.
 - The home folder is found even when `HOME` / `USERPROFILE` is unset, so the `~` shortening still works.
 - A non-Unicode path to the binary no longer crashes it.
+- Control characters in the directory, branch, model or output style name are dropped, so they can't inject terminal escape sequences into the status line.
 
 ### Changed
 - Clippy runs on Windows, Linux and macOS in CI. The Release workflow runs only from `master` and tests the static Linux (musl) build it ships.
